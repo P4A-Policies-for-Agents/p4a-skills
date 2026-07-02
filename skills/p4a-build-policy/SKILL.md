@@ -124,6 +124,19 @@ there instead.
   the catalog icon (probed in that order). Absent is fine; the catalog falls
   back to a default glyph.
 
+## Recommended: a how-to / home.md
+
+Ship a **`home.md`** at the policy root. On deploy, P4A publishes it as the
+policy's documentation page on the Anypoint Exchange asset — so it's the doc a
+platform admin reads when deciding to apply the policy. Treat it as the policy's
+front page: what it does, the config parameters (and their defaults), a minimal
+apply example, and any caveats. A plain `README.md` helps contributors browsing
+the GitHub repo, but it's `home.md` that reaches the catalog/Exchange surface, so
+write that one for the *consumer*, not the contributor.
+
+Neither is required to pass the submit-time check — but a policy with no
+home.md lands in the catalog with an empty doc page, which reads as unfinished.
+
 ## Catalog metadata
 
 A submission carries, alongside the GitHub URL(s):
