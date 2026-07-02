@@ -147,6 +147,31 @@ your own (or your workspace's) resources. The docs tools (`search_docs`,
 | `update_workspace_member` | Change a member's role / re-enable | `workspaceId`, `userId`, `role?`, `reenable?` | no |
 | `remove_workspace_member` | Remove (soft-disable) a member | `workspaceId`, `userId`, `confirm?` | **yes** |
 
+### Confirm inputs before submitting
+
+**Always show the human the exact inputs and get their explicit go-ahead before
+calling any submission or filing tool** — `submit_policy`, `submit_idea`,
+`vote_idea` — and before the destructive/outward-facing tools covered in
+[Confirming a destructive action](#confirming-a-destructive-action)
+(`deploy_policy`, `delete_*`, `remove_workspace_member`).
+
+These tools create or change records other people see (a submission enters the
+review queue; an idea is filed publicly; a deployment reaches Anypoint), and the
+agent is often assembling the fields from context — a wrong `githubUrl`,
+`category`, or `targetOrganizationIds` should be caught *before* the call, not
+walked back after. So:
+
+1. Restate the full payload you're about to send (every field, resolved ids
+   spelled out as their human-readable names where you can).
+2. Wait for the human to confirm or correct it.
+3. Only then call the tool.
+
+This applies even when the tool itself wouldn't otherwise prompt (e.g.
+`submit_policy` / `submit_idea` are non-destructive and never elicit) — the
+confirmation is the agent's responsibility, not the server's. For the tools that
+*do* elicit, this restate-and-confirm step is also how you decide whether to pass
+`confirm: true`.
+
 ### A typical discover → deploy flow
 
 1. `search_policies` (or `list_ideas`) to find what you want.
@@ -154,7 +179,12 @@ your own (or your workspace's) resources. The docs tools (`search_docs`,
    manual steps.
 3. `list_my_connections` → pick a `connectionId`; `list_connection_business_groups`
    → pick the `targetOrganizationIds`.
-4. `list_my_workspaces` → pick a `workspaceId`.
+4. `list_my_workspaces` → pick a `workspaceId`. **Default to the personal
+   workspace** when the chosen connection is available in more than one workspace,
+   unless the human explicitly names a shared workspace. Deploying into a shared
+   workspace exposes the deployment to that workspace's other members, so don't
+   pick one implicitly just because the connection happens to be reachable there —
+   confirm the target workspace as part of the input-confirmation step above.
 5. `deploy_policy` with those ids (confirms — see below).
 6. `get_deployment` / `get_deployment_logs` to follow the build to completion.
 
