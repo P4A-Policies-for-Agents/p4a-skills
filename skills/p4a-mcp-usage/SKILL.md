@@ -1,6 +1,6 @@
 ---
 name: p4a-mcp-usage
-description: Use when connecting an AI agent to the P4A (Policies 4 Agents) platform over its MCP server, or when driving that server's tools to discover, deploy, or manage policies, connections, workspaces, and ideas from an agent. Covers connecting the Streamable-HTTP MCP endpoint, authenticating with a Personal Access Token (PAT) bearer, the api:read / api:write scope split, the full read/write tool set (search_policies, get_policy, get_install_command, list_deployments, get_deployment, get_deployment_logs, connection/submission/workspace/idea readers, search_docs, get_doc, submit_policy, submit_idea, vote_idea, deploy_policy, connection and workspace mutations), and the destructive-tool confirmation flow (deploy_policy, delete_deployment, delete_failed_deployments, delete_connection, remove_workspace_member) including the confirm:true bypass and what happens when a client lacks the elicitation capability. Do NOT use for writing PDK/Rust policy code (see the omni-gateway-pdk-skills repo), for assembling a submittable policy repo (see p4a-build-policy), or for the pre-submit self-check (see p4a-verify-requirements).
+description: Use when connecting an AI agent to the P4A (Policies 4 Agents) platform over its MCP server, or when driving that server's tools to discover, deploy, or manage policies, connections, workspaces, and ideas from an agent. Covers connecting the Streamable-HTTP MCP endpoint, authenticating with a Personal Access Token (PAT) bearer, the api:read / api:write scope split, which tools each scope gates, the destructive-tool confirmation flow (deploy_policy, delete_deployment, delete_failed_deployments, delete_connection, remove_workspace_member) including the confirm:true bypass and no-elicitation fallthrough, confirming inputs with the human before any submit/deploy, and defaulting deployments to the personal workspace. Do NOT use for writing PDK/Rust policy code (see the omni-gateway-pdk-skills repo), for assembling a submittable policy repo (see p4a-build-policy), or for the pre-submit self-check (see p4a-verify-requirements).
 ---
 
 # P4A MCP Usage
@@ -104,48 +104,25 @@ was minted `api:read`-only; mint a new `api:write` token.
 
 ## Tools
 
-All tools are **RLS-scoped to your token's user** — you only ever see and mutate
-your own (or your workspace's) resources. The docs tools (`search_docs`,
-`get_doc`) read public documentation and need only a valid token.
+Each tool's own description (surfaced to your client at connect time) is the
+source of truth for its purpose and parameters — don't rely on this skill to
+re-list them. What matters here is the **scope each tool needs** and **which ones
+are destructive**, since those drive how you call them.
 
-### Read tools (`api:read`)
+All tools are **RLS-scoped to your token's user** — you only see and mutate your
+own (or your workspace's) resources.
 
-| Tool | Purpose | Key inputs |
-| --- | --- | --- |
-| `search_policies` | Search the policy catalog | `query?`, `category?`, `limit?` |
-| `get_policy` | Fetch one policy | `id` (uuid) |
-| `get_install_command` | Manual install / deploy commands for a policy | `id` (uuid) |
-| `list_deployments` | Your deployments, newest first | `policyId?`, `status?`, `limit?` |
-| `get_deployment` | One deployment + latest build-job progress | `deploymentId` (uuid) |
-| `get_deployment_logs` | Persisted build-log lines (paginate with `afterId`) | `deploymentId`, `afterId?`, `limit?` |
-| `list_my_connections` | Your Anypoint connections (masked — no secrets) | — |
-| `get_connection` | One connection (masked) | `id` (uuid) |
-| `list_connection_business_groups` | Anypoint orgs reachable by a connection | `connectionId` (uuid) |
-| `list_my_submissions` | Your policy submissions | `status?`, `limit?` |
-| `list_my_workspaces` | Your workspace memberships + roles | — |
-| `get_workspace` | One workspace, your role, member list | `id` (uuid) |
-| `list_ideas` | Policy Ideas (RLS-scoped) | `query?`, `category?`, `limit?` |
-| `get_idea` | One Policy Idea | `id` (uuid) |
-| `search_docs` | Full-text docs search | `query`, `limit?` |
-| `get_doc` | One doc page by slug | `slug` |
-
-### Write tools (`api:write`)
-
-| Tool | Purpose | Key inputs | Destructive |
-| --- | --- | --- | --- |
-| `submit_policy` | Submit a GitHub-hosted policy for review | `name`, `description`, `githubUrl`, `category`, `projectType?`, `implementationGithubUrl?`, … | no |
-| `submit_idea` | Submit a Policy Idea | `title`, `description`, `category?` | no |
-| `vote_idea` | Toggle your vote on an idea | `id` (uuid) | no |
-| `deploy_policy` | Deploy a policy to Anypoint org(s) | `policyId`, `connectionId`, `workspaceId`, `targetOrganizationIds[]`, `doPublish?`, `doRelease?`, `ref?`, `confirm?` | **yes** |
-| `delete_deployment` | Delete one failed deployment | `deploymentId`, `confirm?` | **yes** |
-| `delete_failed_deployments` | Bulk-delete failed deployments | `policyId?`, `confirm?` | **yes** |
-| `rename_connection` | Rename an Anypoint connection | `id`, `name` | no |
-| `delete_connection` | Delete an Anypoint connection | `id`, `confirm?` | **yes** |
-| `create_workspace` | Create a workspace (you become owner) | `name`, `slug?` | no |
-| `rename_workspace` | Rename a workspace | `workspaceId`, `name` | no |
-| `add_workspace_member` | Add / re-enable a member | `workspaceId`, `email`, `role` | no |
-| `update_workspace_member` | Change a member's role / re-enable | `workspaceId`, `userId`, `role?`, `reenable?` | no |
-| `remove_workspace_member` | Remove (soft-disable) a member | `workspaceId`, `userId`, `confirm?` | **yes** |
+- **`api:read`** — every `search_*` / `get_*` / `list_*` tool (catalog,
+  deployments, connections, submissions, workspaces, ideas). The docs tools
+  (`search_docs`, `get_doc`) read public docs and need only a valid token.
+- **`api:write`** — the mutating tools: `submit_policy`, `submit_idea`,
+  `vote_idea`, `deploy_policy`, `rename_connection`, `delete_connection`,
+  `create_workspace`, `rename_workspace`, `add_workspace_member`,
+  `update_workspace_member`, `remove_workspace_member`, `delete_deployment`,
+  `delete_failed_deployments`.
+- **Destructive / outward-facing** (gate on confirmation — see below):
+  `deploy_policy`, `delete_deployment`, `delete_failed_deployments`,
+  `delete_connection`, `remove_workspace_member`.
 
 ### Confirm inputs before submitting
 
