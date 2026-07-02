@@ -60,8 +60,12 @@ The read tools resolve the ids the write tools need. Typical chain:
 1. `search_policies` (or `list_ideas`) to find what you want.
 2. `get_policy` to inspect it; `get_install_command` if you'd rather run the
    manual steps instead of deploying through the server.
-3. `list_my_connections` → pick a `connectionId`; `list_connection_business_groups`
-   → pick the `targetOrganizationIds`.
+3. `list_my_connections` → pick a `connectionId`; then **always call
+   `list_connection_business_groups` and have the human confirm which business
+   groups are the deploy targets** — present the reachable groups by name and let
+   them choose the `targetOrganizationIds`. Never infer the targets or default to
+   "all reachable"; a deploy lands in exactly the orgs chosen here, so this is a
+   required approval step, not a convenience listing.
 4. `list_my_workspaces` → pick a `workspaceId`. **Default to the personal
    workspace** when the chosen connection is reachable in more than one workspace,
    unless the human explicitly names a shared one. A shared-workspace deployment
@@ -80,8 +84,10 @@ The read tools resolve the ids the write tools need. Typical chain:
 create or change records other people see — a submission enters the review queue,
 an idea is filed publicly, a deployment reaches Anypoint — and the agent is
 usually assembling the fields from context, so a wrong `githubUrl`, `category`,
-target org, or workspace should be caught *before* the call, not walked back
-after.
+target business group, or workspace should be caught *before* the call, not walked
+back after. For `deploy_policy` the highest-stakes fields are the target business
+groups (`targetOrganizationIds`, resolved via `list_connection_business_groups` in
+step 3) and the workspace — restate both by name.
 
 1. Restate the full payload (every field; spell resolved ids out as their
    human-readable names where you can).
