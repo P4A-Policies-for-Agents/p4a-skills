@@ -124,18 +124,26 @@ there instead.
   the catalog icon (probed in that order). Absent is fine; the catalog falls
   back to a default glyph.
 
-## Recommended: a how-to / home.md
+## Recommended: a how-to doc in the repo
 
-Ship a **`home.md`** at the policy root. On deploy, P4A publishes it as the
-policy's documentation page on the Anypoint Exchange asset — so it's the doc a
-platform admin reads when deciding to apply the policy. Treat it as the policy's
-front page: what it does, the config parameters (and their defaults), a minimal
-apply example, and any caveats. A plain `README.md` helps contributors browsing
-the GitHub repo, but it's `home.md` that reaches the catalog/Exchange surface, so
-write that one for the *consumer*, not the contributor.
+Write a consumer-facing how-to in the repo (e.g. `how-to.md`, or a `## Usage`
+section of the `README.md`): what the policy does, its config parameters and
+their defaults, a minimal apply example, and any caveats. It surfaces on P4A in
+**two** places at submission — neither is auto-extracted from a repo file, so
+you carry the content across yourself:
 
-Neither is required to pass the submit-time check — but a policy with no
-home.md lands in the catalog with an empty doc page, which reads as unfinished.
+- **The submission `description`** (2–120 chars name; **10–20,000-char
+  description**) becomes the policy's Anypoint Exchange **asset doc page** —
+  P4A generates that page from `description` on deploy (there is no repo
+  `home.md` ingestion; the description *is* the doc). Paste the how-to's body
+  into `description` so the Exchange/catalog page reads as finished rather than
+  empty.
+- **The "Examples / how-to URL" field** (optional) takes a **URL**, not a file
+  — point it at the GitHub-rendered how-to (e.g. the repo's how-to.md page) or a
+  hosted guide. It shows up as a documentation link on the policy detail page.
+
+So: keep the doc in the repo for contributors, mirror its body into
+`description` for the Exchange page, and link its URL in the how-to field.
 
 ## Catalog metadata
 
