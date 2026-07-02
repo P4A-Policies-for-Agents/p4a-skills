@@ -124,6 +124,30 @@ there instead.
   the catalog icon (probed in that order). Absent is fine; the catalog falls
   back to a default glyph.
 
+## The gcl.yaml config definition
+
+`gcl.yaml` is the policy's **configuration schema** (GCL / `PolicyDefinition`) —
+it declares the parameters a platform admin fills in when applying the policy,
+and drives the config form Anypoint renders. It's a PDK-owned schema (see the
+PDK docs for the full spec); P4A only reads its property *names* (to reject any
+that collide with Rust keywords). Two authoring conventions matter for a
+well-formed policy:
+
+- **Give each config property a `description`.** Every parameter under
+  `spec.properties` should carry a `description` — it's the help text shown next
+  to the field in the Anypoint config UI. A parameter with no description ships
+  as an unlabelled input, which reads as unfinished. (This is the *property*
+  description, distinct from the submission `description` that becomes the
+  Exchange doc page — see below.)
+- **Mark secrets with the `security:sensitive` characteristic.** Any property
+  holding a password, token, key, or certificate must carry the
+  `security:sensitive` characteristic so the platform masks it in the UI and
+  handles it as a secret rather than plaintext config. Omitting it leaks the
+  value into logs and the config form in the clear.
+
+Consult the PDK documentation for the exact GCL keys and characteristic syntax —
+the schema lives with the PDK, not with P4A.
+
 ## Recommended: a how-to doc in the repo
 
 Write a consumer-facing how-to in the repo (e.g. `how-to.md`, or a `## Usage`
@@ -165,5 +189,6 @@ approved Policy Idea it delivers.
 Derived from the public P4A documentation:
 
 - <https://docs.p4a.ai/docs/guides/submitting-a-policy> — required files, unified vs split, `pdk` ≥ 1.8, workspace inheritance, public-repo requirement, categories.
+- <https://docs.mulesoft.com/pdk/latest/> — the PDK / GCL `PolicyDefinition` schema: config property `description` and the `security:sensitive` characteristic.
 
 _Snapshot: 2026-07-02._
