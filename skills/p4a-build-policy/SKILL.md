@@ -129,9 +129,9 @@ there instead.
 `gcl.yaml` is the policy's **configuration schema** (GCL / `PolicyDefinition`) —
 it declares the parameters a platform admin fills in when applying the policy,
 and drives the config form Anypoint renders. It's a PDK-owned schema (see the
-PDK docs for the full spec); P4A only reads its property *names* (to reject any
-that collide with Rust keywords). Two authoring conventions matter for a
-well-formed policy:
+PDK docs for the full spec). Property *names* matter: a name that collides with
+a Rust reserved keyword breaks the build pipeline's codegen (see the gotcha
+below). Two authoring conventions matter for a well-formed policy:
 
 - **Give each config property a `description`.** Every parameter under
   `spec.properties` should carry a `description` — it's the help text shown next
@@ -147,6 +147,32 @@ well-formed policy:
 
 Consult the PDK documentation for the exact GCL keys and characteristic syntax —
 the schema lives with the PDK, not with P4A.
+
+### Gotcha: property names must not collide with Rust keywords
+
+A `gcl.yaml` config property named after a Rust reserved keyword (`type`,
+`match`, `move`, `ref`, `impl`, `fn`, `loop`, `mod`, …) breaks the **build
+pipeline**, not just the submit-time name check. The pipeline runs
+`cargo anypoint config-gen` to regenerate `src/generated/config.rs` from the
+definition, which emits an invalid struct field (`pub type: ...`) and aborts
+codegen. Exact deploy error:
+
+```
+gcl.yaml (definition) has a config property whose name collides with a Rust
+reserved keyword: 'type'. cargo anypoint config-gen emits an invalid Rust
+struct field for it and aborts codegen. Rename the property (e.g. 'type' →
+'fieldType') in definition/gcl.yaml and re-deploy.
+```
+
+- **Local `make build` will NOT catch this** if the repo checks in a
+  hand-maintained `config.rs` (some split-model policies do, when `config-gen`
+  can't handle nested objects / DataWeave selectors). The pipeline regenerates
+  from `gcl.yaml` regardless, so the local build passes and the deploy fails.
+- **Fix:** rename the property (e.g. `type` → `fieldType`) in `gcl.yaml`. The
+  offending key is often nested inside an array `items` object — a discriminator
+  like `type: selector | value` — so grep the whole file, not just top-level
+  properties. Update the matching serde `#[serde(alias = "...")]` and any docs /
+  tests that use the old key.
 
 ## Recommended: a how-to doc in the repo
 
@@ -191,4 +217,4 @@ Derived from the public P4A documentation:
 - <https://docs.p4a.ai/docs/guides/submitting-a-policy> — required files, unified vs split, `pdk` ≥ 1.8, workspace inheritance, public-repo requirement, categories.
 - <https://docs.mulesoft.com/pdk/latest/> — the PDK / GCL `PolicyDefinition` schema: config property `description` and the `security:sensitive` characteristic.
 
-_Snapshot: 2026-07-02._
+_Snapshot: 2026-07-02 (rev. deploy-time findings from rest-to-a2a 1.0.6)._

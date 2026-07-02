@@ -75,6 +75,32 @@ The read tools resolve the ids the write tools need. Typical chain:
 6. `get_deployment` / `get_deployment_logs` to follow the build to completion
    (paginate logs with `afterId`).
 
+### Deploy dedup — a failed deploy blocks retries of the same version
+
+`deploy_policy` **dedups on policy + target org + version**, not on the git
+`ref`. The result carries `deduped: true/false` per org:
+
+- A repeat `deploy_policy` for a version that already has a deployment row
+  returns `deduped: true` and the **existing** deployment id — it does **not**
+  start a new build. If that existing row is `failed`, polling it just re-reads
+  the old failure; pushing a fixed commit and re-deploying at the new `ref`
+  changes nothing, because the version (e.g. `1.0.6`) is unchanged.
+- The dedup key clears after a short window (~5 min). Retrying after that yields
+  `deduped: false` and a fresh deployment id that builds the current `ref`.
+
+So when a deploy fails at the build stage and you push a fix at the same
+version, you have three ways forward:
+
+1. **Wait out the dedup window** (~5 min), then re-deploy at the fixed `ref` —
+   simplest, no destructive action.
+2. **`delete_deployment`** the failed row (destructive; needs confirmation —
+   see below), then re-deploy immediately.
+3. **Bump the version** (e.g. `1.0.6` → `1.0.7` in `Cargo.toml` + `exchange.json`),
+   which sidesteps the dedup key entirely.
+
+Always check `deduped` in the result before trusting a poll: `deduped: true` on
+a retry means nothing rebuilt.
+
 ## What to gate for human approval
 
 ### Confirm inputs before any submit or deploy
@@ -128,4 +154,4 @@ Derived from the public P4A documentation:
 - <https://docs.p4a.ai/docs/mcp/overview> — server model (endpoint, transport, sessions, elicitation).
 - <https://docs.p4a.ai/docs/api/personal-access-tokens> — PAT scopes (`api:read` / `api:write`).
 
-_Snapshot: 2026-07-02._
+_Snapshot: 2026-07-02 (rev. deploy-time findings from rest-to-a2a 1.0.6)._
