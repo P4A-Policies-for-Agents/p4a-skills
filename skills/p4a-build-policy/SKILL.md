@@ -1,6 +1,6 @@
 ---
 name: p4a-build-policy
-description: "Use when assembling a GitHub-hosted policy repository so the P4A (Policies 4 Agents) platform can accept it as a submission. Covers the two accepted layouts — the unified model (one root with Makefile, Cargo.toml, src/lib.rs) and the split model (a definition root with gcl.yaml + exchange.json + Makefile and a separate implementation root with Cargo.toml + Makefile + src/lib.rs) — the pdk dependency floor (version >= 1.8, including Cargo workspace inheritance via pdk = { workspace = true }), the public-repo requirement, subPath addressing for policies nested in a monorepo, optional files (definition/gcl.yaml, icon.png/icon.svg), and the catalog metadata (name, description, category) a submission carries. Explains the two-phase gate — the submit-time shape/PDK check vs the build pipeline that compiles and publishes. Do NOT use for writing the policy's Rust logic (see the omni-gateway-pdk-skills repo), for driving the MCP submit_policy tool (see p4a-mcp-usage), or for the pre-submit self-check (see p4a-verify-requirements)."
+description: "Use when assembling a GitHub-hosted policy repository so the P4A (Policies 4 Agents) platform can accept it as a submission. Covers the two accepted layouts — the unified model (one root with Makefile, Cargo.toml, src/lib.rs) and the split model (a definition root with gcl.yaml + exchange.json + Makefile and a separate implementation root with Cargo.toml + Makefile + src/lib.rs) — the pdk dependency floor (version >= 1.8, including Cargo workspace inheritance via pdk = { workspace = true }), the public-repo requirement, subPath addressing for policies nested in a monorepo, optional files (definition/gcl.yaml, icon.png/icon.svg), the catalog metadata (name, description, category) a submission carries, and the split-model implementation Makefile build contract (table-form definition_asset_id, cargo-anypoint >= 1.8, GAV-fetch build flow) that the deploy pipeline requires. Explains the two-phase gate — the submit-time shape/PDK check vs the build pipeline that compiles and publishes. Do NOT use for writing the policy's Rust logic (see the omni-gateway-pdk-skills repo), for driving the MCP submit_policy tool (see p4a-mcp-usage), or for the pre-submit self-check (see p4a-verify-requirements)."
 ---
 
 # P4A Build Policy
@@ -174,6 +174,95 @@ struct field for it and aborts codegen. Rename the property (e.g. 'type' →
   properties. Update the matching serde `#[serde(alias = "...")]` and any docs /
   tests that use the old key.
 
+## Gotcha: the split-model implementation Makefile build contract
+
+The build pipeline drives a split-model deploy by publishing the **definition**
+to Exchange as a `-dev` asset, patching the **implementation** `Cargo.toml`'s
+`definition_asset_id` to point at that published dev version, then running the
+implementation's `make publish`. That handshake only works if the implementation
+Makefile uses the **GAV-fetch build flow**, and the metadata is shaped the way
+`cargo anypoint` expects. Three deploy-time failures come from getting this
+wrong — none is caught by a local `make build` (the local build has the
+unpatched metadata and a stale checked-in `config.rs`), so they surface only in
+the pipeline.
+
+### 1. `definition_asset_id` must be a table, not a bare string
+
+Under `[package.metadata.anypoint]` in the implementation `Cargo.toml`,
+`definition_asset_id` must be a `{ name, version }` **table**:
+
+```toml
+[package.metadata.anypoint]
+group_id = "00000000-0000-0000-0000-000000000000"
+definition_asset_id = { name = "my-policy", version = "1.0.0" }
+implementation_asset_id = "my-policy-flex"
+```
+
+A bare string (`definition_asset_id = "my-policy"`) fails at the
+`build-asset-files` wiring step:
+
+```
+Implementation Cargo.toml does not declare definition_asset_id.{name,version}
+under [package.metadata.anypoint]; cannot wire the definition publish into
+make build-asset-files
+```
+
+### 2. `cargo-anypoint` must be ≥ 1.8.0
+
+The Makefile's `install-cargo-anypoint` target must install **1.8.0**, not an
+older pin (1.6.0 was a common scaffold default):
+
+```makefile
+install-cargo-anypoint:
+	@cargo install cargo-anypoint@1.8.0
+```
+
+cargo-anypoint 1.6.0 cannot parse the table-form `definition_asset_id`; it
+stringifies the table to `[object Object]`, so the derived policy-ref name comes
+out as `[object Object]-v1-0` and `make publish` aborts:
+
+```
+make publish exited 2 during phase 'publish_dev': error: unexpected argument
+'Object]-v1-0' found
+```
+
+### 3. Use the GAV-fetch build flow, not the old `policy-project` flow
+
+The implementation Makefile must fetch the (pipeline-published) definition from
+Exchange by GAV and build against it — the flow working split-model policies
+use:
+
+```makefile
+DEFINITION_GAV = $(shell cargo anypoint get-policy-definition-gav)
+
+build-asset-files:  ## Retrieves the definition from exchange
+	@anypoint-cli-v4 pdk fetch-policy --gav=$(DEFINITION_GAV)
+	@cargo anypoint config-gen --output ./src/generated/config.rs
+
+build:
+	@cargo build --target $(TARGET) --release
+	@cargo anypoint build-policy --target=$(BUILD_POLICY_DIR) --wasm=$(TARGET_DIR)/$(CRATE_NAME).wasm --min-runtime-version=$(MIN_FLEX_VERSION)
+	@anypoint-cli-v4 pdk install-policy --target $(TARGET_DIR) --path $(BUILD_POLICY_DIR)/$(CRATE_NAME)/implementation/
+
+publish: build-asset-files build
+	@anypoint-cli-v4 pdk policy-wasm publish --wasm=$(TARGET_DIR)/$(CRATE_NAME).wasm --target=$(BUILD_POLICY_DIR)/$(CRATE_NAME) --dev
+```
+
+The **old** monolithic flow — where `build` calls
+`cargo anypoint gcl-gen -d $(DEFINITION_NAME) ...` and `publish` runs
+`anypoint-cli-v4 pdk policy-project publish` — does not resolve `DEFINITION_NAME`
+in the split pipeline (the definition lives in a separate root), so the
+policy-ref name degrades to `[object Object]-v1-0` and publish fails the same way
+as (2). Set `MIN_FLEX_VERSION := 1.9.3` when the policy uses
+`enable_stop_iteration` or other ≥1.9 features.
+
+**Why it passes locally but fails in the pipeline:** locally you build against
+the unpatched `definition_asset_id` and a checked-in `config.rs`; the pipeline
+patches the metadata to the just-published dev version and regenerates, so the
+Makefile flow and metadata shape are exercised only on deploy. When migrating a
+policy out of a monorepo, port the Makefiles from a known-good split-model repo
+rather than trusting the ones that came with the source.
+
 ## Recommended: a how-to doc in the repo
 
 Write a consumer-facing how-to in the repo (e.g. `how-to.md`, or a `## Usage`
@@ -217,4 +306,4 @@ Derived from the public P4A documentation:
 - <https://docs.p4a.ai/docs/guides/submitting-a-policy> — required files, unified vs split, `pdk` ≥ 1.8, workspace inheritance, public-repo requirement, categories.
 - <https://docs.mulesoft.com/pdk/latest/> — the PDK / GCL `PolicyDefinition` schema: config property `description` and the `security:sensitive` characteristic.
 
-_Snapshot: 2026-07-02 (rev. deploy-time findings from rest-to-a2a 1.0.6)._
+_Snapshot: 2026-07-03 (rev. split-model Makefile build-contract findings from a policy migration)._
