@@ -70,6 +70,15 @@ Also confirm the **surface**: public well-known card only, or extended card too.
 If the mock has no extended card, extended-surface features are out of scope —
 say so and test the public well-known card (`GET /.well-known/agent-card.json`).
 
+**Also ask the human for a connected-app `client_id` and `client_secret`.** Every
+raw Exchange and API Manager REST call in this skill (publish, poll, delete,
+external instance, instance create/PATCH, upstream fetch) authenticates with a
+bearer token minted from these credentials via `client_credentials` (Step 2).
+The connected app must have the Exchange and API Manager scopes for the target
+org/env. Do NOT hardcode or echo the secret — take it from the human, keep it in
+an env var (e.g. `$CLIENT_ID` / `$CLIENT_SECRET`), and reuse the token for all
+calls below.
+
 ## Step 1 — Build the mock agent in A2D
 
 Use the A2D MCP tools to design a mock agent whose Agent Card gives the policy
@@ -100,7 +109,15 @@ should list every skill. This is your **ungoverned baseline** — save it.
    them) `inputModes`/`outputModes`.
 
 2. **Get a token** — `POST /accounts/api/v2/oauth2/token`, `grant_type=client_credentials`,
-   form-encoded `client_id`/`client_secret`.
+   form-encoded `client_id`/`client_secret`. Use the connected-app credentials the
+   human supplied in Step 0 (`$CLIENT_ID` / `$CLIENT_SECRET`); mint once and reuse
+   the bearer token for every raw REST call in Steps 2–4.
+
+   ```bash
+   TOKEN=$(curl -sS -X POST https://anypoint.mulesoft.com/accounts/api/v2/oauth2/token \
+     -d grant_type=client_credentials \
+     -d "client_id=$CLIENT_ID" -d "client_secret=$CLIENT_SECRET" | jq -r .access_token)
+   ```
 
 3. **Raw multipart POST** (the CLI's `exchange asset upload` has no `agent` type —
    it won't work). Endpoint carries **org AND full GAV** in the path:
@@ -129,10 +146,23 @@ should list every skill. This is your **ungoverned baseline** — save it.
    show `{key:"protocol", value:"a2a_v1"}` (the `protocol-version` attribute may
    still read `v0.3` — that one is cosmetic and card-shape-derived; ignore it).
 
-5. **Hard-delete** a mistaken asset via `DELETE /exchange/api/v2/assets/{group}/{asset}/{version}`
+5. **Always add a `home.md` portal home page.** A freshly published asset has a
+   blank catalog page until a home page exists — `PUT` one every time you publish
+   (and again after any hard-delete + republish, which drops portal pages). Author
+   a `home.md` describing the mock agent (what it is, its skills, the raw + governed
+   endpoints) and upload it as the asset's home:
+
+   ```
+   PUT /exchange/api/v2/assets/{ORG}/{assetId}/{version}/pages/home
+     Authorization: Bearer $TOKEN
+     Content-Type: text/markdown
+     --data-binary @home.md            # → 200/201; page now renders on the catalog
+   ```
+
+6. **Hard-delete** a mistaken asset via `DELETE /exchange/api/v2/assets/{group}/{asset}/{version}`
    + header `X-Delete-Type: hard-delete` (→ 204). The CLI has no hard-delete flag.
-   Hard-delete drops the asset's portal pages too — re-`PUT` the home page after
-   republishing.
+   Hard-delete drops the asset's portal pages too — re-`PUT` the `home.md` (step 5)
+   after republishing.
 
 See [[publish-a2a-agent-to-exchange]] for the full recipe and field list.
 
@@ -299,8 +329,12 @@ Exchange assets, not the wire — note that so it doesn't read as a bug.
   redeploy; a probe fired immediately reads the pre-policy card.
 - **Missing trailing `/`** on proxy path or upstream URI — the managed Flex GW
   rejects or mis-routes.
-- **Forgetting the home page after a hard-delete + republish.** Hard-delete drops
-  portal pages; re-`PUT` the home markdown or the catalog page goes blank.
+- **Publishing without a `home.md`.** A newly published (or hard-delete +
+  republished) asset renders a blank catalog page until you `PUT` a home page —
+  always upload one (Step 2.5).
+- **Skipping the connected-app credentials.** Every raw Exchange/API Manager call
+  needs a bearer token minted from the human-supplied `client_id`/`client_secret`
+  (Step 0 / Step 2.2) — collect them up front, don't stall mid-loop.
 
 ## Source Ref
 
