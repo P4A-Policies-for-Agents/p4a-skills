@@ -1,6 +1,6 @@
 ---
 name: p4a-test-mcp-policies-with-a2d
-description: Use when testing an MCP gateway policy end-to-end against a realistic server — building a mock MCP server in A2D (Agent-to-Discovery), publishing its manifest to Anypoint Exchange as a type=mcp asset, fronting it with a Flex/Omni Gateway API instance, applying the policy under test, and diffing the governed tools/list against the ungoverned mock to prove the policy fired. Covers the confirm-transport-first step and the fact that MCP has no v0.3/v1.0 split — the multipart -F type=mcp form field (not a properties.protocol) makes the asset governable, and the transport lives INSIDE the mcp-metadata.json manifest, NOT as a queryable Exchange attribute; the working publish method (A2D's publish is unreliable — hand-author mcp-metadata.json + raw multipart POST, verified live); the gateway instance (endpoint.type=mcp, rest rejected; technology=flexGateway; isCloudHub null; deploy via apimanager/xapi/v1 because api/v1 silently leaves deployment null on managed/Omni Flex GW); the MCP-Support-must-be-first-in-chain rule (it preserves SSE framing + Mcp-Session-Id downstream); and verifying over a JSON-RPC/SSE handshake (initialize → notifications/initialized → tools/list), NOT a static GET. Do NOT use for writing the policy's PDK/Rust code (see omni-gateway-pdk-skills), the PDK-local cargo test harness, testing an A2A Agent Card policy (see p4a-test-a2a-policies-with-a2d), or driving the P4A MCP server to deploy a catalog policy (see p4a-mcp-usage).
+description: Use when testing an MCP gateway policy end-to-end against a realistic server — building a mock MCP server in A2D (Agent-to-Discovery), publishing its manifest to Anypoint Exchange as a type=mcp asset, fronting it with a Flex/Omni Gateway API instance, applying the policy under test, and diffing the governed tools/list against the ungoverned mock to prove the policy fired. Covers satisfying A2D's "Issues Found" quality gate up front (required provider org+URL, tool description ≥200 chars, property description ≥25 chars, property name ≥5 chars); the confirm-transport-first step and the fact that MCP has no v0.3/v1.0 split — the multipart -F type=mcp form field (not a properties.protocol) makes the asset governable, and the transport lives INSIDE the mcp-metadata.json manifest, NOT as a queryable Exchange attribute; the working publish method (A2D's publish is unreliable — hand-author mcp-metadata.json + raw multipart POST, verified live); the gateway instance (endpoint.type=mcp, rest rejected; technology=flexGateway; isCloudHub null; deploy via apimanager/xapi/v1 because api/v1 silently leaves deployment null on managed/Omni Flex GW); the MCP-Support-must-be-first-in-chain rule (it preserves SSE framing + Mcp-Session-Id downstream); and verifying over a JSON-RPC/SSE handshake (initialize → notifications/initialized → tools/list), NOT a static GET. Do NOT use for writing the policy's PDK/Rust code (see omni-gateway-pdk-skills), the PDK-local cargo test harness, testing an A2A Agent Card policy (see p4a-test-a2a-policies-with-a2d), or driving the P4A MCP server to deploy a catalog policy (see p4a-mcp-usage).
 ---
 
 # P4A: Test MCP Policies with A2D
@@ -79,8 +79,14 @@ calls below.
 ## Step 1 — Build the mock MCP server in A2D
 
 Use the A2D MCP tools (`design_mcp_server`, then `add_mcp_tool` per tool) to
-design a mock server whose tool list gives the policy something to act on. For a
-tool-list/visibility policy, that means a deliberate mix:
+design a mock server whose tool list gives the policy something to act on.
+
+**Name the server `<Policy Name> Test Server`** (e.g. `Tool List Governor Test
+Server`) so the mock is instantly traceable to the policy under test across A2D,
+the Exchange catalog, and the gateway instance. Carry the same name through the
+Exchange `assetId`/`name` (Step 2) and the `instanceLabel` (Step 3).
+
+For a tool-list/visibility policy, the tool set should be a deliberate mix:
 
 - a **public** tool that should stay (control),
 - a tool targeted for **description/annotation rewrite** (verify the text changes),
@@ -90,6 +96,24 @@ tool-list/visibility policy, that means a deliberate mix:
 Give each tool a real `inputSchema`/`outputSchema` and `mockScenarios` so
 `tools/call` returns deterministic data (`===` / `exists` operators; append the
 `exists` catch-all **last** so specific matches win).
+
+> **Satisfy A2D's quality gate as you build — don't discover it at publish.** A2D
+> runs a validator ("Issues Found") over the server + every tool, and a failing
+> asset blocks the loop. Set these up front so the report comes back clean:
+>
+> - **Server provider info is required** — set both the provider **organization**
+>   AND a provider **URL** on the server (missing either is a hard failure).
+> - **Tool `description` ≥ 200 characters** — every tool, including trivial ones
+>   like `health_ping`. Write a real sentence or two on what it does, its inputs,
+>   and what it returns; a one-liner (≈120–170 chars) fails.
+> - **Each tool property `description` ≥ 25 characters** — every field in the
+>   `inputSchema`/`outputSchema` needs a substantive description, not a stub like
+>   `"the topic"` (12 chars).
+> - **Each tool property `name` ≥ 5 characters** — rename short fields (`text` →
+>   `documentText`, `id` → `recordId`) so no property name is under 5 chars.
+>
+> These same minimums apply to the hand-authored `mcp-metadata.json` in Step 2 —
+> the manifest is derived from the mock, so fixing them here fixes both.
 
 Confirm the live mock serves them all with the JSON-RPC handshake (Step 5 shows
 the full recipe): `initialize` → `notifications/initialized` → `tools/list`
@@ -360,6 +384,12 @@ denied vs allowed tool and diff the results the same way.
 
 - **Skipping Step 0.** Building before confirming the transport, the governed
   method (`tools/list` vs `tools/call`), and inbound-vs-outbound wastes the loop.
+- **Tripping A2D's "Issues Found" quality gate.** The validator hard-fails on:
+  missing provider **organization**/**URL** on the server; a tool `description`
+  under **200 chars** (bites trivial tools like `health_ping`); a tool property
+  `description` under **25 chars**; a tool property `name` under **5 chars**
+  (`text`, `id`). Set all of these when you build the mock (Step 1) and mirror them
+  in `mcp-metadata.json` (Step 2) — don't discover them at publish.
 - **Reaching for a `protocol` field, or expecting a `transport` attribute.** MCP
   has no v0.3/v1.0 split and no `properties.protocol`. The asset is made governable
   by **`type=mcp`**; the transport is declared inside `mcp-metadata.json`
@@ -414,7 +444,10 @@ _Snapshot: 2026-08-02. **Publish step verified live** against an EU Anypoint org
 raw multipart `-F type=mcp` + `files.mcp-metadata.json` → 202 → `completed`,
 published as `type: mcp` (attributes carry only `platform`; transport is in the
 manifest, NOT a `properties.transport` attribute — the earlier claim was wrong and
-is corrected here); throwaway asset hard-deleted after. The gateway/apply/verify
+is corrected here); throwaway asset hard-deleted after. **A2D quality-gate
+minimums** (provider org+URL required; tool description ≥200 chars; property
+description ≥25 chars; property name ≥5 chars) captured from a live "Issues Found"
+report and baked into Step 1/Step 2. The gateway/apply/verify
 facts (endpoint.type=mcp, xapi/v1 deploy, MCP-Support-first chain, JSON-RPC/SSE
 tools/list verification) are sourced from a live streamable-HTTP MCP server fronted
 by an Agent Fabric Ingress managed Flex Gateway; the `pages/home` PUT route for mcp
