@@ -1,6 +1,6 @@
 ---
 name: p4a-test-mcp-policies-with-a2d
-description: Use when testing an MCP gateway policy end-to-end against a realistic server — building a mock MCP server in A2D (Agent-to-Discovery), publishing its manifest to Anypoint Exchange as a type=mcp asset, fronting it with a Flex/Omni Gateway API instance, applying the policy under test, and diffing the governed tools/list against the ungoverned mock to prove the policy fired. Covers the confirm-transport-first step and the fact that MCP has no v0.3/v1.0 split — the asset is pinned by the publish-time properties.transport value (streamablehttp), NOT a protocol field; the working publish method (A2D's publish is unreliable — hand-author mcp-metadata.json + raw multipart POST, as for A2A); the gateway instance (endpoint.type=mcp, rest rejected; technology=flexGateway; isCloudHub null; deploy via apimanager/xapi/v1 because api/v1 silently leaves deployment null on managed/Omni Flex GW); the MCP-Support-must-be-first-in-chain rule (it preserves SSE framing + Mcp-Session-Id downstream); and verifying over a JSON-RPC/SSE handshake (initialize → notifications/initialized → tools/list), NOT a static GET. Do NOT use for writing the policy's PDK/Rust code (see omni-gateway-pdk-skills), the PDK-local cargo test harness, testing an A2A Agent Card policy (see p4a-test-a2a-policies-with-a2d), or driving the P4A MCP server to deploy a catalog policy (see p4a-mcp-usage).
+description: Use when testing an MCP gateway policy end-to-end against a realistic server — building a mock MCP server in A2D (Agent-to-Discovery), publishing its manifest to Anypoint Exchange as a type=mcp asset, fronting it with a Flex/Omni Gateway API instance, applying the policy under test, and diffing the governed tools/list against the ungoverned mock to prove the policy fired. Covers the confirm-transport-first step and the fact that MCP has no v0.3/v1.0 split — the multipart -F type=mcp form field (not a properties.protocol) makes the asset governable, and the transport lives INSIDE the mcp-metadata.json manifest, NOT as a queryable Exchange attribute; the working publish method (A2D's publish is unreliable — hand-author mcp-metadata.json + raw multipart POST, verified live); the gateway instance (endpoint.type=mcp, rest rejected; technology=flexGateway; isCloudHub null; deploy via apimanager/xapi/v1 because api/v1 silently leaves deployment null on managed/Omni Flex GW); the MCP-Support-must-be-first-in-chain rule (it preserves SSE framing + Mcp-Session-Id downstream); and verifying over a JSON-RPC/SSE handshake (initialize → notifications/initialized → tools/list), NOT a static GET. Do NOT use for writing the policy's PDK/Rust code (see omni-gateway-pdk-skills), the PDK-local cargo test harness, testing an A2A Agent Card policy (see p4a-test-a2a-policies-with-a2d), or driving the P4A MCP server to deploy a catalog policy (see p4a-mcp-usage).
 ---
 
 # P4A: Test MCP Policies with A2D
@@ -25,7 +25,9 @@ confirm the policy transformed it as configured.
 
 **MCP has no protocol-version split** (unlike A2A's v0.3/v1.0). There is one
 transport that matters here — **streamable-HTTP** — so there is no dual-publish
-dance. The lever that pins the asset is `properties.transport=streamablehttp`.
+dance. The lever that makes the asset governable is **`type=mcp`**; the transport
+is declared *inside* the `mcp-metadata.json` manifest (`transport.kind`), not as an
+Exchange attribute you can query.
 
 ## When to Use
 
@@ -50,9 +52,10 @@ dance. The lever that pins the asset is `properties.transport=streamablehttp`.
 **Before building anything, ask the human what to test.** MCP has no v0.3/v1.0
 version to pick, but three things still shape the whole loop:
 
-- **Transport.** This skill covers **streamable-HTTP** (`properties.transport=streamablehttp`;
-  gateway `endpoint.type=mcp`). SSE-only servers behave differently at the wire;
-  confirm the mock and the policy target streamable-HTTP.
+- **Transport.** This skill covers **streamable-HTTP** (`transport.kind:
+  streamableHttp` in the manifest; gateway `endpoint.type=mcp`). SSE-only servers
+  behave differently at the wire; confirm the mock and the policy target
+  streamable-HTTP.
 - **Surface the policy acts on.** `tools/list` is the common target (tool hiding /
   rename / description rewrite). But a policy might instead gate `tools/call`,
   filter `resources/list`, or act on the `initialize` capabilities. Confirm which
@@ -109,13 +112,17 @@ The live mock endpoint is `POST https://a2d-ai.com/api/platform/<mock-id>/mcp`
    `protocolVersion` (e.g. `2025-03-26`), `transport: {kind: "streamableHttp",
    path: "/mcp"}`, `capabilities`, and the `tools[]` array (each with
    `name`/`description`/`annotations`/`inputSchema`/`outputSchema`). This is the
-   MCP analogue of the A2A card — it is the payload the policy will govern.
+   MCP analogue of the A2A card — it is the payload the policy will govern, and
+   **the transport lives here** (`transport.kind`), not in an Exchange attribute.
 
 2. **Author the Exchange descriptor.** `assetId`, `groupId`, `version`, `name`,
-   `description`, `tags`, and the properties block — the key field is
-   **`properties.transport=streamablehttp`** (plus `properties.platform`). There
-   is **no `properties.protocol`** for MCP; `transport` is what pins the asset as
-   MCP and unlocks the `endpoint.type=mcp` gateway instance (Step 3).
+   `description`, `tags`, and the properties block. The `-F type=mcp` form field
+   (Step 2.4) is what makes the asset governable and unlocks the `endpoint.type=mcp`
+   gateway instance (Step 3) — there is **no `properties.protocol`** for MCP.
+   `properties.platform` surfaces as a queryable Exchange attribute; other
+   `properties.*` (e.g. a `transport` hint) may be silently dropped — **verified:**
+   a published MCP asset shows only `{platform: …}` under `attributes[]`, so do not
+   rely on a `transport` attribute existing (it lives in the manifest).
 
 3. **Get a token** — `POST /accounts/api/v2/oauth2/token`, `grant_type=client_credentials`,
    form-encoded `client_id`/`client_secret`. Use the connected-app credentials the
@@ -133,36 +140,45 @@ The live mock endpoint is `POST https://a2d-ai.com/api/platform/<mock-id>/mcp`
 
    ```
    POST /exchange/api/v2/organizations/{ORG}/assets/{groupId}/{assetId}/{version}
-     -F type=mcp
+     -F type=mcp                               # ← the MCP lever (NOT a properties.protocol)
      -F name=...
      -F status=published
      -F description=...                        # keep concise
-     -F properties.transport=streamablehttp    # ← the MCP lever (NOT properties.protocol)
-     -F properties.platform=a2d
+     -F properties.platform=a2d                # surfaces as an attributes[] entry
      -F "files.mcp-metadata.json=@mcp-metadata.json;type=application/json"
    ```
 
-   The manifest rides as a file field named **`files.mcp-metadata.json`**. The
-   bare `/assets` and org-only routes 404 or hit the wrong facade.
+   The manifest rides as a file field named **`files.mcp-metadata.json`** (it lands
+   under the `mcp-metadata` file classifier). The bare `/assets` and org-only routes
+   404 or hit the wrong facade. **Verified end-to-end** against a live EU org:
+   `type=mcp` + this file field → 202 → `completed`, asset published as `type: mcp`.
 
 5. **Poll** — response is **202** + a `publicationStatusLink`. Poll it (~2s) until
-   `status: completed` (statusCode 201). `409` = already published (bump version to
-   re-publish). Confirm the tag stuck:
+   `status: completed`. `409` = already published (bump version to re-publish).
+   Confirm the publish stuck:
    `GET /exchange/api/v2/assets/{ORG}/{assetId}/{version}` → the asset should show
-   `type: mcp` and the `transport` property.
+   `type: mcp` and a `mcp-metadata` file classifier. (Its `attributes[]` will carry
+   only `platform` — the transport is inside the manifest, not an attribute.)
 
-6. **Always add a `home.md` portal home page.** A freshly published asset has a
-   blank catalog page until a home page exists — `PUT` one every time you publish
-   (and again after any hard-delete + republish, which drops portal pages). Author
-   a `home.md` describing the mock server (what it is, its tools + sensitivity, the
-   transport/path, the raw + governed endpoints) and upload it:
+6. **Add a `home.md` portal home page.** A freshly published asset has a blank
+   catalog page until a home page exists. Author a `home.md` describing the mock
+   server (what it is, its tools + sensitivity, the transport/path, the raw +
+   governed endpoints) and upload it:
 
    ```
    PUT /exchange/api/v2/assets/{ORG}/{assetId}/{version}/pages/home
      Authorization: Bearer $TOKEN
      Content-Type: text/markdown
-     --data-binary @home.md            # → 200/201; page now renders on the catalog
+     --data-binary @home.md
    ```
+
+   > **Verify the page endpoint for mcp assets.** This is the path the A2A flow
+   > uses; in one MCP test a `PUT .../pages/home` immediately after publish returned
+   > **404** (the page slug/route may differ for `type=mcp`, or the page tree may
+   > not exist until the asset settles). If you get a 404, `GET
+   > .../{version}/pages` to see the available page names/routes and PUT against
+   > those, rather than assuming `home`. Re-`PUT` after any hard-delete + republish
+   > (that drops portal pages).
 
 7. **Hard-delete** a mistaken asset via `DELETE /exchange/api/v2/assets/{group}/{asset}/{version}`
    + header `X-Delete-Type: hard-delete` (→ 204). The CLI has no hard-delete flag.
@@ -344,9 +360,11 @@ denied vs allowed tool and diff the results the same way.
 
 - **Skipping Step 0.** Building before confirming the transport, the governed
   method (`tools/list` vs `tools/call`), and inbound-vs-outbound wastes the loop.
-- **Reaching for a `protocol` field.** MCP has no v0.3/v1.0 split and no
-  `properties.protocol` — the asset is pinned by **`properties.transport=streamablehttp`**
-  and `type=mcp`. Setting a protocol field does nothing.
+- **Reaching for a `protocol` field, or expecting a `transport` attribute.** MCP
+  has no v0.3/v1.0 split and no `properties.protocol`. The asset is made governable
+  by **`type=mcp`**; the transport is declared inside `mcp-metadata.json`
+  (`transport.kind`). **Verified:** a published MCP asset's `attributes[]` carries
+  only `platform` — don't query for a `transport` attribute or gate on one.
 - **Trusting A2D's Exchange publish.** Hand-author `mcp-metadata.json` + raw POST
   (Step 2), same as the A2A card.
 - **Pointing the instance at the app artifact.** The `<name>-mule-application`
@@ -373,8 +391,9 @@ denied vs allowed tool and diff the results the same way.
 - **Missing trailing `/`** on proxy path or upstream URI — the managed Flex GW
   rejects or mis-routes.
 - **Publishing without a `home.md`.** A newly published (or hard-delete +
-  republished) asset renders a blank catalog page until you `PUT` a home page —
-  always upload one (Step 2.6).
+  republished) asset renders a blank catalog page until a home page exists — add
+  one (Step 2.6). If the `pages/home` PUT 404s for an mcp asset, list `.../pages`
+  and PUT against the reported route rather than assuming `home`.
 - **Skipping the connected-app credentials.** Every raw Exchange/API Manager call
   needs a bearer token minted from the human-supplied `client_id`/`client_secret`
   (Step 0 / Step 2.3) — collect them up front, don't stall mid-loop.
@@ -384,14 +403,19 @@ denied vs allowed tool and diff the results the same way.
 - <https://docs.mulesoft.com/pdk/latest/policies-pdk-policy-templates> — PDK policy
   templates (public).
 - MCP manifest shape: `protocolVersion` + `transport {kind: streamableHttp, path}`
-  + `tools[]` (each with `inputSchema`/`outputSchema`). Asset pinned at publish
-  time via `type=mcp` + `properties.transport=streamablehttp`.
+  + `tools[]` (each with `inputSchema`/`outputSchema`). Asset made governable at
+  publish time via `type=mcp`; the transport lives in the manifest, not an
+  Exchange attribute.
 - Streamable-HTTP handshake: `initialize` (capture `mcp-session-id`) →
   `notifications/initialized` → `tools/list` / `tools/call`; SSE `data:` lines;
   `Accept-Encoding: identity`.
 
-_Snapshot: 2026-08-02 (mirrors [[p4a-test-a2a-policies-with-a2d]]; MCP-specific
-facts — type=mcp + properties.transport, endpoint.type=mcp, xapi/v1 deploy,
-MCP-Support-first chain, JSON-RPC/SSE tools/list verification — verified against a
-live streamable-HTTP MCP server fronted by an Agent Fabric Ingress managed Flex
-Gateway instance)._
+_Snapshot: 2026-08-02. **Publish step verified live** against an EU Anypoint org:
+raw multipart `-F type=mcp` + `files.mcp-metadata.json` → 202 → `completed`,
+published as `type: mcp` (attributes carry only `platform`; transport is in the
+manifest, NOT a `properties.transport` attribute — the earlier claim was wrong and
+is corrected here); throwaway asset hard-deleted after. The gateway/apply/verify
+facts (endpoint.type=mcp, xapi/v1 deploy, MCP-Support-first chain, JSON-RPC/SSE
+tools/list verification) are sourced from a live streamable-HTTP MCP server fronted
+by an Agent Fabric Ingress managed Flex Gateway; the `pages/home` PUT route for mcp
+assets is unconfirmed (404 in one test — see Step 2.6)._

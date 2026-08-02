@@ -35,8 +35,9 @@ Skills live under [`skills/`](skills/), one directory per skill (`p4a-<topic>/SK
   mock to prove the policy fired (includes the confirm-protocol-version-first step and the
   inbound-vs-outbound apply distinction).
 - **`p4a-test-mcp-policies-with-a2d`** — the MCP twin of the above: build a mock MCP server in A2D,
-  publish its manifest to Exchange as a `type=mcp` asset (`properties.transport=streamablehttp`),
-  front it with a Flex/Omni Gateway `mcp` instance, apply the policy, and diff the governed
+  publish its manifest to Exchange as a `type=mcp` asset (verified live; transport lives in the
+  manifest, not an Exchange attribute), front it with a Flex/Omni Gateway `mcp` instance, apply
+  the policy, and diff the governed
   `tools/list` against the ungoverned mock (includes the MCP-Support-must-be-first-in-chain rule,
   the `xapi/v1` deploy surface, and verifying over the JSON-RPC/SSE handshake rather than a GET).
 
