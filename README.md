@@ -29,6 +29,11 @@ Skills live under [`skills/`](skills/), one directory per skill (`p4a-<topic>/SK
 - **`p4a-document-policy`** — the uniform contract for a policy's catalog documentation tabs: the
   four standard tabs (overview / configuration / examples / faq), when to add a custom tab, the
   See Also convention, and the mechanical traps that corrupt a tab set.
+- **`p4a-test-a2a-policies-with-a2d`** — test an A2A gateway policy end-to-end: build a mock agent
+  in A2D, publish its Agent Card to Exchange as a `type=agent` asset, front it with a Flex/Omni
+  Gateway `a2a` instance, apply the policy, and diff the governed Agent Card against the ungoverned
+  mock to prove the policy fired (includes the confirm-protocol-version-first step and the
+  inbound-vs-outbound apply distinction).
 
 ## Using these skills
 
