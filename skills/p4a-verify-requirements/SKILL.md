@@ -1,6 +1,6 @@
 ---
 name: p4a-verify-requirements
-description: "Use when self-checking a P4A (Policies 4 Agents) policy submission against the platform's requirements BEFORE calling submit_policy or the submit form, so the first attempt passes instead of bouncing. Covers the submission metadata rules (name 2-120 chars, description 10-20000 chars, valid githubUrl — plus implementationGithubUrl for split projects, category from the 12 storable values, and the optional videoTutorialUrl / examplesUrl / iconUrl / iconDisabled / deliversIdeaId / projectType fields), the caveat that category is NOT enum-validated server-side (a quality convention, not a hard gate), the repo-shape + pdk>=1.8 checks it defers to p4a-build-policy, and a runnable pre-submit checklist plus a failed-submission diagnosis map. Run this as the last step before submitting. Do NOT use for assembling the repo layout in the first place (see p4a-build-policy), for driving the submit_policy tool (see p4a-mcp-usage), or for writing policy Rust code (see the omni-gateway-pdk-skills repo)."
+description: "Use when self-checking a P4A (Policies 4 Agents) policy submission against the platform's requirements BEFORE calling submit_policy or the submit form, or when writing the submission description field, so the first attempt passes and reads as a real doc page instead of bouncing or shipping empty. Covers the submission metadata rules (name 2-120 chars, description 10-20000 chars, valid githubUrl — plus implementationGithubUrl for split projects, category from the 12 storable values, and the optional videoTutorialUrl / examplesUrl / iconUrl / iconDisabled / deliversIdeaId / projectType fields), how to write the description (it IS the catalog + Exchange doc page — a recipe: lead sentence, key caveat, config summary, worked example, positioning), the caveat that category is NOT enum-validated server-side (a quality convention, not a hard gate), the repo-shape + pdk>=1.8 checks it defers to p4a-build-policy, and a runnable pre-submit checklist plus a failed-submission diagnosis map. Run this as the last step before submitting. Do NOT use for assembling the repo layout in the first place (see p4a-build-policy), for driving the submit_policy tool (see p4a-mcp-usage), or for writing policy Rust code (see the omni-gateway-pdk-skills repo)."
 ---
 
 # P4A Verify Requirements
@@ -35,7 +35,7 @@ Every field is trimmed before validation. Required unless marked optional.
 | Field | Rule |
 | --- | --- |
 | `name` | **Required.** 2–120 chars. |
-| `description` | **Required.** 10–20,000 chars. Markdown allowed — this becomes the Anypoint Exchange asset doc page on deploy (see [[p4a-build-policy]]), so write it for the consumer. |
+| `description` | **Required.** 10–20,000 chars of Markdown. This *is* the policy's doc page — P4A renders it as the catalog detail page and generates the Anypoint Exchange asset doc page from it on deploy (there is no repo `home.md` ingestion). Write it for the consumer; see [Writing the description](#writing-the-description) below. |
 | `githubUrl` | **Required.** Valid URL to a **public** repo (see repo-shape checks below). |
 | `implementationGithubUrl` | **Required iff `projectType` is `split`** — the implementation root's URL. Omit for unified. |
 | `projectType` | Optional, `unified` (default) or `split`. |
@@ -58,6 +58,45 @@ clear name + description) is a **quality convention that gets the policy found
 and reviewed well, not a hard gate**. Treat it as required for a good
 submission even though the server won't bounce a bad one.
 
+## Writing the description
+
+The `description` is the policy's **doc page**, not a blurb — it's what a
+consumer reads to decide whether to install and how to configure. Length passes
+validation at 10 chars; a *good* submission fills the field with a real page.
+Because it renders as Markdown on both the catalog and (on deploy) the Exchange
+asset page, write structured Markdown, not one paragraph.
+
+If the policy already has **catalog documentation tabs** (see
+[[p4a-document-policy]]), the description and the `overview` tab cover the same
+ground — write the overview well and mirror its body (plus a config summary)
+into `description` rather than authoring twice.
+
+**Recipe — a good description contains, in this order:**
+
+1. **Lead sentence** — what the policy does and for whom, in one line. Name the
+   gateway (Omni/Flex), the surface it governs (A2A / MCP / LLM / HTTP), and the
+   action (detect, block, transform, rate-limit…). This line is also what a
+   reader skims first, so it must stand alone.
+2. **The one key caveat** — the trust-model or scope limit a consumer must know
+   before relying on it (e.g. "detection, not redaction"; "fails open on
+   unknown versions"; "disclosure ≠ authorization"). State it early, not buried.
+3. **Configuration summary** — the properties, their defaults, and empty-config
+   behavior. A short table or list; enough to configure without leaving the
+   page. Don't reproduce the full schema — summarize and point to the repo/tabs.
+4. **A minimal worked example** — one copy-pasteable config snippet with a
+   one-line intent. Fenced code block.
+5. **Positioning** — how it composes with other policies and where it sits in
+   the request lifecycle (ordering constraints, what to pair it with).
+
+**Shape rules:**
+
+- Open with the lead sentence — the catalog may truncate a preview, so the
+  first line has to carry the value.
+- Use headings, tables, and fenced code blocks; the renderer honors them. A
+  wall of prose reads as unfinished.
+- Keep it accurate to the shipped version — a description claiming a capability
+  the code doesn't have is worse than omitting it.
+
 ## Repo-shape + pdk checks (defer to p4a-build-policy)
 
 These are hard gates enforced at submit time; the rules and accepted forms live
@@ -76,7 +115,9 @@ in [[p4a-build-policy]]. Confirm before submitting:
 Run top to bottom; every box must be checked before submitting.
 
 - [ ] `name` is 2–120 chars.
-- [ ] `description` is 10–20,000 chars and reads as consumer-facing doc.
+- [ ] `description` is 10–20,000 chars and reads as a consumer-facing doc page —
+      lead sentence, key caveat, config summary, a worked example, positioning
+      (see [Writing the description](#writing-the-description)).
 - [ ] `githubUrl` is a valid URL to a **public** repo.
 - [ ] For a split project: `projectType: split` **and** `implementationGithubUrl` set.
 - [ ] `category` is one of the 12 storable values (quality convention).
@@ -104,4 +145,4 @@ Derived from the public P4A documentation:
 
 - <https://docs.p4a.ai/docs/guides/submitting-a-policy> — submission requirements, required files, `pdk` ≥ 1.8, public-repo rule, categories.
 
-_Snapshot: 2026-07-02._
+_Snapshot: 2026-08-02 (added description-writing recipe)._

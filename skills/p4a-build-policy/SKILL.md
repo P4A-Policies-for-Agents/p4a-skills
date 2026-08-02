@@ -271,12 +271,11 @@ their defaults, a minimal apply example, and any caveats. It surfaces on P4A in
 **two** places at submission — neither is auto-extracted from a repo file, so
 you carry the content across yourself:
 
-- **The submission `description`** (2–120 chars name; **10–20,000-char
-  description**) becomes the policy's Anypoint Exchange **asset doc page** —
-  P4A generates that page from `description` on deploy (there is no repo
-  `home.md` ingestion; the description *is* the doc). Paste the how-to's body
-  into `description` so the Exchange/catalog page reads as finished rather than
-  empty.
+- **The submission `description`** is a **submit-time metadata field**, not a
+  repo file — it becomes the catalog + Anypoint Exchange doc page. Mirror the
+  how-to's body into it so the page reads as finished. What to put in it, and
+  how to structure it, is a submit-side concern — see [[p4a-verify-requirements]]
+  ("Writing the description").
 - **The "Examples / how-to URL" field** (optional) takes a **URL**, not a file
   — point it at the GitHub-rendered how-to (e.g. the repo's how-to.md page) or a
   hosted guide. It shows up as a documentation link on the policy detail page.
