@@ -24,6 +24,9 @@ Skills live under [`skills/`](skills/), one directory per skill (`p4a-<topic>/SK
   the `pdk` dependency floor, and the metadata the catalog expects.
 - **`p4a-verify-requirements`** — self-check a submission's repo shape and metadata against the
   platform's minimum requirements *before* submitting, so the first submission passes validation.
+- **`p4a-document-policy`** — the uniform contract for a policy's catalog documentation tabs: the
+  four standard tabs (overview / configuration / examples / faq), when to add a custom tab, the
+  See Also convention, and the mechanical traps that corrupt a tab set.
 
 ## Using these skills
 
