@@ -101,7 +101,11 @@ protocol/version limits, ordering constraints. Cross-link the custom tabs
   must not point consumers at a policy they can't yet install. For each kept
   policy, **link its P4A portal page** (where a consumer installs it), not its
   GitHub repo: `https://www.p4a.ai/dashboard/policies/<id>`, where `<id>` is the
-  policy `id` from `search_policies`. Name it and say how it composes.
+  policy `id` from `search_policies`. A portal link is **same-site**, so open it
+  in the same tab — write it as an HTML anchor, `<a href="…/<id>"
+  target="_self">Name</a>`, not a bare `[Name](…)` markdown link (which opens a
+  new tab). Leave off-site links (spec, MuleSoft docs, PDK) as plain markdown —
+  those are external and a new tab is correct. Name it and say how it composes.
 - **Framework** — the PDK doc links.
 
 ## Mechanical traps — these silently corrupt the tab set
@@ -123,8 +127,9 @@ protocol/version limits, ordering constraints. Cross-link the custom tabs
    `faq` to last so it stays the final tab.
 5. Build the See Also section — `search_policies` for related P4A policies,
    keep only the approved-AND-published ones, and link each one's portal page
-   (`https://www.p4a.ai/dashboard/policies/<id>`). Verify any MuleSoft/spec URL
-   before linking.
+   with a same-tab HTML anchor (`<a href="…/<id>" target="_self">`). Keep
+   off-site links (MuleSoft/spec/PDK) as plain markdown; verify each URL before
+   linking.
 6. `get_policy_docs` again — confirm completeness is full and sortOrders are
    unique and contiguous.
 
@@ -140,7 +145,8 @@ protocol/version limits, ordering constraints. Cross-link the custom tabs
   policy doc slugs are easy to guess wrong.
 - **Linking an unpublished P4A policy, or naming one with no link.** A See Also
   entry must be approved AND published (`lifecycle_status: approved` +
-  non-null `published_at`) and link its portal page
-  (`https://www.p4a.ai/dashboard/policies/<id>`). Naming an `under_review` policy
-  points consumers at something they can't install; a GitHub link or a bare name
-  isn't the install surface.
+  non-null `published_at`) and link its portal page with a same-tab HTML anchor
+  (`<a href="https://www.p4a.ai/dashboard/policies/<id>" target="_self">`).
+  Naming an `under_review` policy points consumers at something they can't
+  install; a GitHub link or a bare name isn't the install surface; a bare
+  markdown link to the portal opens a new tab for a same-site page.
