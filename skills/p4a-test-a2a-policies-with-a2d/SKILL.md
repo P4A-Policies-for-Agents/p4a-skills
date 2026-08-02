@@ -277,8 +277,10 @@ anypoint-cli-v4 api-mgr:policy:apply <instanceId> <policyAssetId> \
   --upstreamId <upstreamId> -c "$(cat config.json)"
 ```
 
-Check the policy's `gcl.yaml` `metadata/capabilities/injectionPoint` before
-applying — `outbound` ⇒ you need `--upstreamId`.
+Read the policy's `gcl.yaml` `metadata/capabilities/injectionPoint` to infer the
+binding, **then confirm it with the human before applying** — `injectionPoint` can
+be absent, ambiguous, or list both, and applying against a wrong guess burns a
+redeploy. `outbound` ⇒ you need `--upstreamId`.
 
 ## Step 5 — Verify the governed diff
 
