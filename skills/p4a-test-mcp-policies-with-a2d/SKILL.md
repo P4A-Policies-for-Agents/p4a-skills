@@ -250,17 +250,26 @@ POST /apimanager/api/v1/organizations/{ORG}/environments/{ENV_ID}/apis
     "deploymentType": "HY",
     "isCloudHub": null,                        # MUST be null (not false) and MUST be present
     "proxyUri": "http://0.0.0.0:8081/<label>/",
-    "uri": "<mock-base-url>/"                  # host ROOT only — see note below
+    "uri": "<mock-mcp-base>/"                  # the prefix such that +"/mcp" = the real surface — see note
   },
   "spec": {"groupId":"<ORG>","assetId":"<assetId>","version":"<version>"},
   "instanceLabel": "<label>"
 }
 ```
 
-> **Upstream URI is the host root, with NO `/mcp` path.** The MCP Support policy
-> maps the gateway route onto the server's `/mcp` streamable-HTTP surface, so the
-> upstream carries no path — just the host, trailing `/`. Putting `/mcp` on the
-> upstream double-paths the route and mis-routes the handshake.
+> **Upstream URI is the prefix onto which MCP Support appends `/mcp` — NOT
+> necessarily the host root.** MCP Support maps the gateway route onto
+> `<upstream-uri>mcp`, so the upstream must be exactly the server's MCP surface
+> **minus** the trailing `mcp`, with a trailing `/`. Do NOT put `/mcp` on the
+> upstream yourself (that double-paths to `…/mcp/mcp`).
+> - Server whose MCP surface is at the host root (`https://host/mcp`) → upstream
+>   is the **host root**: `https://host/`.
+> - **A2D mock** — its surface is `https://www.a2d-ai.com/api/platform/<serverId>/mcp`,
+>   so the upstream is the **platform prefix**
+>   `https://www.a2d-ai.com/api/platform/<serverId>/` (host root alone 404s). The
+>   rule is "surface minus `mcp`", not "host root". **Verified live:** with this
+>   prefix the `initialize`/`tools/list`/`tools/call` handshake succeeds through the
+>   gateway.
 
 ### Deploy via the `xapi/v1` PATCH surface (managed / Omni Flex GW)
 
@@ -281,13 +290,19 @@ PATCH /apimanager/xapi/v1/organizations/{ORG}/environments/{ENV_ID}/apis/{id}?ch
   "endpointUri": "https://<gw-public-host>/<label>/",
   "endpoint": { "deploymentType":"HY", "type":"mcp", "isCloudHub":null,
                 "proxyUri":"http://0.0.0.0:8081/<label>/", "tlsContexts":{"inbound":null} },
-  "upstreams": [ { "id":"<upid>", "uri":"<mock-base-url>/", "label":null, "tlsContext":null } ],
+  "upstreams": [ { "id":"<upid>", "uri":"<mock-mcp-base>/", "label":null, "tlsContext":null } ],
   "routing":   [ { "upstreams":[ { "id":"<upid>", "weight":100 } ] } ],
   "deployment": { "environmentId":"<ENV_ID>", "type":"HY", "expectedStatus":"deployed",
                   "overwrite":false, "targetId":"<GW_TARGET_ID>", "targetName":"<GW_NAME>",
                   "gatewayVersion":"1.0.0" }
 }
 ```
+
+Confirm the PATCH returned a **non-null `deployment`** (`expectedStatus: deployed`,
+a real `applicationId`, and `gatewayVersion` resolved to the live version e.g.
+`1.13.2`) — that's how you know the deploy took (vs the `api/v1` silent-null trap).
+To **redeploy** later (e.g. after applying a policy), re-send the same PATCH with
+`overwrite: true`.
 
 **Live-probe constraints (managed Flex GW):** `scheme=http` (TLS terminates at the
 gateway), listener `port=8081`, both proxy path and upstream URI must end with
@@ -336,6 +351,30 @@ anypoint-cli-v4 api-mgr:policy:apply <instanceId> <policyAssetId> \
   -c "$(cat config.json)"
 anypoint-cli-v4 api-mgr:api:redeploy <instanceId> --environment "<ENV>"
 ```
+
+> **MCP Support GAV is in a MuleSoft group, not your org.** `mcp-support`'s
+> `groupId` is a MuleSoft-owned group (e.g. `68ef9520-24e9-4cf2-b2f5-620025690913`,
+> `v1.0.1`), **not** your `<ORG>` — resolve it with
+> `search_policies`/`exchange asset list`, don't assume it shares your org's group.
+> Your policy-under-test uses your `<ORG>` group.
+
+**Raw-REST alternative (no CLI auth).** If the CLI isn't logged in, apply policies
+with the same bearer token used everywhere else — `POST …/apis/{id}/policies` with
+`order` controlling chain position (MCP Support `order:1`, policy-under-test
+`order:2`). `configurationData` is the policy config object inline:
+
+```bash
+POST /apimanager/api/v1/organizations/{ORG}/environments/{ENV_ID}/apis/{id}/policies
+  { "groupId":"68ef9520-24e9-4cf2-b2f5-620025690913", "assetId":"mcp-support",
+    "assetVersion":"1.0.1", "configurationData":{}, "order":1 }              # → 201
+
+POST /apimanager/api/v1/organizations/{ORG}/environments/{ENV_ID}/apis/{id}/policies
+  { "groupId":"<ORG>", "assetId":"<policyAssetId>", "assetVersion":"<ver>",
+    "configurationData": { …policy config… }, "order":2 }                    # → 201
+```
+
+Then redeploy via the **`xapi/v1` PATCH** (Step 3, `overwrite:true`) — the
+`api-mgr:api:redeploy` CLI equivalent — so the new chain propagates.
 
 **Inbound vs outbound — this bites.** A policy that transforms the *response*
 (e.g. rewriting the `tools/list` a server returns) is **outbound**
@@ -471,4 +510,13 @@ by an Agent Fabric Ingress managed Flex Gateway. **Home-page route now confirmed
 the v2 `pages/home` PUT (and `GET .../pages`) **404 for `type=mcp` assets** — every
 published mcp asset in the org lacks the v2 pages route; the working path is the v1
 **`portal/draft` PUT + `portal` PATCH** surface the UI uses (verified live — page
-published and rendered on the catalog card). See Step 2.6._
+published and rendered on the catalog card). See Step 2.6. **`tools/call`-governing
+policy verified end-to-end** (2026-08-02): an inbound MCP Tool Token Rate Limit
+policy over an A2D mock (default/override/unmetered tiers) — the gateway returned
+`200` then `429` with `X-TokenLimit-Limit/Remaining/Reset` + `Retry-After` and a
+plain-JSON (not SSE) JSON-RPC `-32000` error body; override tier showed its own
+higher limit, unmetered tier emitted no headers. This confirmed two corrections
+baked into Step 3/Step 4: the **upstream URI is the surface-minus-`mcp` prefix**
+(the A2D mock needs `…/api/platform/<serverId>/`, not the host root), and the
+**raw-REST `…/apis/{id}/policies` apply** path works when the CLI isn't
+authenticated (MCP Support's GAV lives in a MuleSoft group, not your org)._
