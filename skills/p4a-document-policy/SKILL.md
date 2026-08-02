@@ -87,10 +87,21 @@ protocol/version limits, ordering constraints. Cross-link the custom tabs
 **See Also:** group the links so the page situates itself in the ecosystem:
 
 - **Official spec** for the protocol the policy governs (A2A, MCP, …).
-- **MuleSoft Omni/Flex Gateway built-in policies** that relate (verify each
-  URL — e.g. `https://docs.mulesoft.com/gateway/latest/policies-included-*`).
+- **MuleSoft Omni/Flex Gateway built-in policies** that relate. Don't hand-type
+  the doc slug — look the policy up in the authoritative catalog:
+  `mcp__p4a__search_policies` with `source: "mulesoft"`, then
+  `mcp__p4a__get_mulesoft_policy` for its `doc_url` and `summary` (so the
+  description you write matches what the built-in actually does, and the A2A/MCP
+  protocol version it targets).
 - **Related P4A policies** — find them with `mcp__p4a__search_policies` (by
-  category or keyword), name them, and say how they compose.
+  category or keyword). **Only link a policy that is approved AND published**:
+  `search_policies` returns `lifecycle_status` and `published_at` on each hit —
+  include it only when `lifecycle_status` is `approved` **and** `published_at` is
+  non-null. Skip anything `under_review`, `draft`, or unpublished; a catalog page
+  must not point consumers at a policy they can't yet install. For each kept
+  policy, **link its P4A portal page** (where a consumer installs it), not its
+  GitHub repo: `https://www.p4a.ai/dashboard/policies/<id>`, where `<id>` is the
+  policy `id` from `search_policies`. Name it and say how it composes.
 - **Framework** — the PDK doc links.
 
 ## Mechanical traps — these silently corrupt the tab set
@@ -111,7 +122,9 @@ protocol/version limits, ordering constraints. Cross-link the custom tabs
 4. Add a `security` / `deployment` custom tab only if it pulls weight; bump
    `faq` to last so it stays the final tab.
 5. Build the See Also section — `search_policies` for related P4A policies,
-   verify any MuleSoft/spec URL before linking.
+   keep only the approved-AND-published ones, and link each one's portal page
+   (`https://www.p4a.ai/dashboard/policies/<id>`). Verify any MuleSoft/spec URL
+   before linking.
 6. `get_policy_docs` again — confirm completeness is full and sortOrders are
    unique and contiguous.
 
@@ -125,3 +138,9 @@ protocol/version limits, ordering constraints. Cross-link the custom tabs
   full body every time.
 - **Linking a MuleSoft/spec URL from memory.** Verify it resolves first — built-in
   policy doc slugs are easy to guess wrong.
+- **Linking an unpublished P4A policy, or naming one with no link.** A See Also
+  entry must be approved AND published (`lifecycle_status: approved` +
+  non-null `published_at`) and link its portal page
+  (`https://www.p4a.ai/dashboard/policies/<id>`). Naming an `under_review` policy
+  points consumers at something they can't install; a GitHub link or a bare name
+  isn't the install surface.
