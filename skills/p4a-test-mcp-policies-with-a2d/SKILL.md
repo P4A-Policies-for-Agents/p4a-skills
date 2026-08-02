@@ -184,30 +184,46 @@ The live mock endpoint is `POST https://a2d-ai.com/api/platform/<mock-id>/mcp`
    `type: mcp` and a `mcp-metadata` file classifier. (Its `attributes[]` will carry
    only `platform` — the transport is inside the manifest, not an attribute.)
 
-6. **Add a `home.md` portal home page.** A freshly published asset has a blank
-   catalog page until a home page exists. Author a `home.md` describing the mock
-   server (what it is, its tools + sensitivity, the transport/path, the raw +
-   governed endpoints) and upload it:
+6. **Add a `home.md` portal home page — via the v1 `portal/draft` API, NOT the
+   v2 `pages` route.** A freshly published asset has a blank catalog page until a
+   home page exists. Author a `home.md` describing the mock server (what it is,
+   its tools + sensitivity, the transport/path, the raw + governed endpoints),
+   then PUT it into the portal **draft** and publish the draft:
 
    ```
-   PUT /exchange/api/v2/assets/{ORG}/{assetId}/{version}/pages/home
+   # 1) write the home page into the editable draft (page name in the path)
+   PUT /exchange/api/v1/organizations/{ORG}/assets/{ORG}/{assetId}/{version}/portal/draft/pages/home
      Authorization: Bearer $TOKEN
      Content-Type: text/markdown
-     --data-binary @home.md
+     --data-binary @home.md                 # → 204
+
+   # 2) publish the draft so the page goes live on the catalog card
+   PATCH /exchange/api/v1/organizations/{ORG}/assets/{ORG}/{assetId}/{version}/portal
+     Authorization: Bearer $TOKEN
+     Content-Type: application/json
+     -d '{}'                                 # → 204
+
+   # 3) (optional) confirm it rendered
+   GET /exchange/api/v1/organizations/{ORG}/assets/{ORG}/{assetId}/{version}/portal/pages/home
    ```
 
-   > **Verify the page endpoint for mcp assets.** This is the path the A2A flow
-   > uses; in one MCP test a `PUT .../pages/home` immediately after publish returned
-   > **404** (the page slug/route may differ for `type=mcp`, or the page tree may
-   > not exist until the asset settles). If you get a 404, `GET
-   > .../{version}/pages` to see the available page names/routes and PUT against
-   > those, rather than assuming `home`. Re-`PUT` after any hard-delete + republish
-   > (that drops portal pages).
+   > **The v2 `pages/home` route does NOT exist for `type=mcp` assets — it 404s,
+   > and so does `GET .../{version}/pages`.** This is the A2A flow's route; it is
+   > simply not wired for mcp. **Verified live:** every published mcp asset in a
+   > real org (e.g. `sf-customer-asset-mcp`, `talent-pool-mcp-server`, `jiraMcp`)
+   > has no v2 pages route and no `pages` field. The Anypoint UI edits the home
+   > page through the **v1 `portal/draft`** surface above — a fresh asset starts
+   > with one `synthetic: true` placeholder `home` page; the `PUT` replaces it
+   > with real content (drops `synthetic`), and the `PATCH …/portal` publishes the
+   > draft. Note the v1 path repeats the org twice (`organizations/{ORG}/assets/{ORG}/…`)
+   > and takes the page name **in the path** (`.../pages/home`), not `pages/home`
+   > as a slug. Re-run both steps after any hard-delete + republish (that drops
+   > portal pages back to the synthetic placeholder).
 
 7. **Hard-delete** a mistaken asset via `DELETE /exchange/api/v2/assets/{group}/{asset}/{version}`
    + header `X-Delete-Type: hard-delete` (→ 204). The CLI has no hard-delete flag.
-   Hard-delete drops the asset's portal pages too — re-`PUT` the `home.md` (step 6)
-   after republishing.
+   Hard-delete drops the asset's portal pages too — re-run the v1 `portal/draft`
+   PUT + `portal` PATCH (step 6) after republishing.
 
 > **The Exchange app artifact is NOT the mcp asset.** If your mock is a deployed
 > Mule app, Exchange already holds an **app**-typed artifact
@@ -422,8 +438,9 @@ denied vs allowed tool and diff the results the same way.
   rejects or mis-routes.
 - **Publishing without a `home.md`.** A newly published (or hard-delete +
   republished) asset renders a blank catalog page until a home page exists — add
-  one (Step 2.6). If the `pages/home` PUT 404s for an mcp asset, list `.../pages`
-  and PUT against the reported route rather than assuming `home`.
+  one (Step 2.6). **For mcp assets the v2 `pages/home` route 404s** (so does `GET
+  .../pages`); use the **v1 `portal/draft` PUT + `portal` PATCH** surface instead
+  (verified against live mcp assets in a real org).
 - **Skipping the connected-app credentials.** Every raw Exchange/API Manager call
   needs a bearer token minted from the human-supplied `client_id`/`client_secret`
   (Step 0 / Step 2.3) — collect them up front, don't stall mid-loop.
@@ -450,5 +467,8 @@ description ≥25 chars; property name ≥5 chars) captured from a live "Issues 
 report and baked into Step 1/Step 2. The gateway/apply/verify
 facts (endpoint.type=mcp, xapi/v1 deploy, MCP-Support-first chain, JSON-RPC/SSE
 tools/list verification) are sourced from a live streamable-HTTP MCP server fronted
-by an Agent Fabric Ingress managed Flex Gateway; the `pages/home` PUT route for mcp
-assets is unconfirmed (404 in one test — see Step 2.6)._
+by an Agent Fabric Ingress managed Flex Gateway. **Home-page route now confirmed:**
+the v2 `pages/home` PUT (and `GET .../pages`) **404 for `type=mcp` assets** — every
+published mcp asset in the org lacks the v2 pages route; the working path is the v1
+**`portal/draft` PUT + `portal` PATCH** surface the UI uses (verified live — page
+published and rendered on the catalog card). See Step 2.6._
