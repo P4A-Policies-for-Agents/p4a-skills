@@ -55,10 +55,9 @@ instance** — NOT the Agent Card body shape (see the boxed warning below).
 
 > **The protocol version is set by the `properties.protocol` value at publish
 > time — it is NOT derived from the Agent Card body.** Exchange also emits a
-> separate, cosmetic `protocol-version` attribute derived from card shape
-> (top-level `url` present ⇒ `v0.3`), but that attribute is *not* what drives the
-> catalog display or the API Manager endpoint-type gate — `properties.protocol`
-> is. Publishing a genuine v1.0 card with `properties.protocol=a2a` still tags the
+> separate `protocol-version` attribute (`v1` for a card sent as
+> `files.a2a-v1-card.json`), but that attribute is *not* what drives the catalog
+> display or the API Manager endpoint-type gate — `properties.protocol` is. Publishing a genuine v1.0 card with `properties.protocol=a2a` still tags the
 > asset (and every downstream instance) "A2A v0.3". Verified against the Anypoint
 > UI publish flow (HAR): the portal sends `properties.protocol=a2a_v1` for a v1.0
 > agent.
