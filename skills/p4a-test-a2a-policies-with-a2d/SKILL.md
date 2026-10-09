@@ -48,7 +48,8 @@ instance** — NOT the Agent Card body shape (see the boxed warning below).
 - **v0.3:** publish with `properties.protocol=a2a`; gateway instance
   `endpoint.type=a2a`. The `anypoint-cli-v4` api-mgr commands support this
   directly (`--type a2a`).
-- **v1.0:** publish with `properties.protocol=**a2a_v1**`; gateway instance
+- **v1.0:** publish with `properties.protocol=**a2a_v1**` and the card in the
+  **`files.a2a-v1-card.json`** file field; gateway instance
   `endpoint.type=a2a_v1`. The CLI has **no** `a2a_v1` type — the v1.0 instance
   must be created via **raw API Manager REST** (Step 3).
 
@@ -61,6 +62,13 @@ instance** — NOT the Agent Card body shape (see the boxed warning below).
 > asset (and every downstream instance) "A2A v0.3". Verified against the Anypoint
 > UI publish flow (HAR): the portal sends `properties.protocol=a2a_v1` for a v1.0
 > agent.
+>
+> **The file field must match the protocol, too.** `a2a_v1` with
+> `files.a2a-card.json` is rejected (`400 … Cannot find any registered domain
+> plugin for current document file://a2a-card.json`), even when the card has a
+> top-level `url`. Send v1.0 cards as `files.a2a-v1-card.json`. The asset then
+> carries the `a2a-v1-card` classifier, and `protocol-version` reads `v1`
+> (verified 2026-10-09).
 
 A policy may behave differently across versions (different field to rewrite,
 different place skills live). Do not assume — confirm which the human wants, and
@@ -97,14 +105,17 @@ should list every skill. This is your **ungoverned baseline** — save it.
 > **A2D's `publish_to_exchange_agent_card` is broken for this.** It serializes
 > from `get_agent_card_spec`, which emits a HOLLOW card (`skills: []`,
 > `supportedInterfaces:[{url:""}]`) — Exchange's agent-domain validator rejects it
-> (`400 INVALID_ASSET_METADATA / "no registered domain plugin"`). The live mock
+> (`400 INVALID_ASSET_METADATA / "no registered domain plugin"`; the same error
+also means the file field doesn't match `properties.protocol`, see Step 0). The live mock
 > endpoint serves skills correctly; only the Exchange builder is hollow. **Publish
 > by hand instead.**
 
-1. **Hand-author a card JSON.** AMF requires a **top-level `url`** — a card
-   without it is rejected (`400 "required key [url] not found"`), regardless of
-   protocol version. A v1.0 card may *also* carry `supportedInterfaces[]`, but
-   that doesn't change the tag (the `properties.protocol` field does — see Step 0).
+1. **Hand-author a card JSON.** A **v0.3** card (`files.a2a-card.json`) needs a
+   **top-level `url`**; without one it's rejected (`400 "required key [url] not
+   found"`). A **v1.0** card (`files.a2a-v1-card.json`) is accepted without a
+   top-level `url`, carrying its endpoints in `supportedInterfaces[]` (verified
+   2026-10-09). Card shape doesn't change the tag; `properties.protocol` does (see
+   Step 0).
    Each skill needs `id`/`name`/`description`/`tags` and (if the mock declares
    them) `inputModes`/`outputModes`.
 
@@ -128,23 +139,29 @@ should list every skill. This is your **ungoverned baseline** — save it.
      -F name=...
      -F status=published
      -F description=...                   # keep concise
-     -F properties.protocol=a2a           # v0.3  ── or ──  a2a_v1  for v1.0
      -F properties.platform=a2d
+     # v0.3:
+     -F properties.protocol=a2a
      -F "files.a2a-card.json=@card.json;type=application/json"
+     # v1.0 (instead of the two lines above):
+     -F properties.protocol=a2a_v1
+     -F "files.a2a-v1-card.json=@card.json;type=application/json"
    ```
 
    **`properties.protocol` is the protocol-version lever** (Step 0): `a2a` → the
    asset displays "A2A v0.3"; `a2a_v1` → "A2A v1.0" and unlocks the `a2a_v1`
    gateway instance type (Step 3). The card rides as a file field named
-   **`files.a2a-card.json`**. The bare `/assets` and org-only routes 404 or hit
+   **`files.a2a-card.json`** (v0.3) or **`files.a2a-v1-card.json`** (v1.0). A
+   mismatch is a 400. The bare `/assets` and org-only routes 404 or hit
    the wrong facade.
 
 4. **Poll** — response is **202** + a `publicationStatusLink`. Poll it (~2s) until
    `status: completed` (statusCode 201). `409` = already published (bump version to
    re-publish). Confirm the tag stuck:
    `GET /exchange/api/v2/assets/{ORG}/{assetId}/{version}` → `attributes[]` should
-   show `{key:"protocol", value:"a2a_v1"}` (the `protocol-version` attribute may
-   still read `v0.3` — that one is cosmetic and card-shape-derived; ignore it).
+   show `{key:"protocol", value:"a2a_v1"}`, and `files[]` should include the
+   `a2a-v1-card` classifier. When the card is sent as `files.a2a-v1-card.json`,
+   `protocol-version` reads `v1`.
 
 5. **Always add a `home.md` portal home page.** A freshly published asset has a
    blank catalog page until a home page exists — `PUT` one every time you publish
@@ -321,8 +338,12 @@ Exchange assets, not the wire — note that so it doesn't read as a bug.
   Only `properties.protocol` moves it.
 - **Trusting A2D's Exchange publish.** It emits a hollow card. Hand-author + raw
   POST (Step 2).
-- **Omitting the top-level `url` on any card.** Exchange rejects it
-  (`required key [url] not found`) — required for v0.3 *and* v1.0.
+- **Omitting the top-level `url` on a v0.3 card.** Exchange rejects it
+  (`required key [url] not found`). v1.0 cards sent as `files.a2a-v1-card.json`
+  don't need one.
+- **Sending a v1.0 card as `files.a2a-card.json`.** With `properties.protocol=a2a_v1`
+  it's a 400 (`no registered domain plugin … a2a-card.json`). Use
+  `files.a2a-v1-card.json`.
 - **Using the CLI for a v1.0 instance.** `--type` has no `a2a_v1`; use raw REST
   with `endpoint.type=a2a_v1` + `technology=flexGateway` + `isCloudHub:null`.
 - **Applying an outbound policy without `--upstreamId`** → "can not be applied as
@@ -348,4 +369,6 @@ Exchange assets, not the wire — note that so it doesn't read as a bug.
 
 _Snapshot: 2026-08-02 (verified end-to-end for BOTH protocol versions: A2D v0.3 +
 v1.0 mocks → Exchange type=agent (a2a / a2a_v1) → Flex GW a2a + a2a_v1 instances →
-outbound Agent-Card governor → governed-card diff)._
+outbound Agent-Card governor → governed-card diff). Updated 2026-10-09: v1.0
+publish now needs the `files.a2a-v1-card.json` file field (re-verified on an EU
+org); the gateway steps were not re-run._
